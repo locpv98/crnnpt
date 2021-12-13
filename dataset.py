@@ -15,22 +15,38 @@ import numpy as np
 
 class lmdbDataset(Dataset):
 
-    def __init__(self, root=None, transform=None, target_transform=None):
+    def __init__(self, root=None, transform=None, target_transform=None, batchsize=64):
         self.env = lmdb.open(
             root,
-            max_readers=1,
+            max_readers=32,
             readonly=True,
             lock=False,
             readahead=False,
-            meminit=False)
+            meminit=False
+            )
 
         if not self.env:
             print('cannot creat lmdb from %s' % (root))
             sys.exit(0)
 
         with self.env.begin(write=False) as txn:
-            nSamples = int(txn.get('num-samples'))
+            nSamples = int(txn.get('num-samples'.encode('utf8')))
+            print(nSamples)
             self.nSamples = nSamples
+
+            # Filtering
+            # self.filtered_index_list = []
+            # for index in range(self.nSamples):
+            #     index += 1  # lmdb starts with 1
+            #     label_key = 'label-%09d'.encode() % index
+            #     label = txn.get(label_key).decode('utf-8')
+
+            #     if len(label) > batchsize:
+            #         # print(f'The length of the label is longer than max_length: length
+            #         # {len(label)}, {label} in dataset {self.root}')
+            #         continue
+
+            #     self.filtered_index_list.append(index)
 
         self.transform = transform
         self.target_transform = target_transform
@@ -42,7 +58,12 @@ class lmdbDataset(Dataset):
         assert index <= len(self), 'index range error'
         index += 1
         with self.env.begin(write=False) as txn:
-            img_key = 'image-%09d' % index
+            # img_key = 'image-%09d' % index
+            # imgbuf = txn.get(img_key)
+            
+            label_key = 'label-%09d'.encode() % index
+            label = txn.get(label_key).decode('utf-8')
+            img_key = 'image-%09d'.encode() % index
             imgbuf = txn.get(img_key)
 
             buf = six.BytesIO()

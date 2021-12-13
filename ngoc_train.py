@@ -9,20 +9,22 @@ import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
 import numpy as np
-# from warpctc_pytorch import CTCLoss
 import os
 import utils
-import dataset
-
+from ngoc.dataset import DatasetLoader
+import time
 import models.crnn as crnn
 
 # import sys
 # sys.setrecursionlimit(50000)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--trainRoot', required=True, help='path to dataset')
-parser.add_argument('--valRoot', required=True, help='path to dataset')
-parser.add_argument('--workers', type=int, help='number of data loading workers', default=0)
+parser.add_argument('--trainIMG', required=True, help='path to dataset')
+parser.add_argument('--trainLB', required=True, help='path to dataset')
+parser.add_argument('--valIMG', required=True, help='path to dataset')
+parser.add_argument('--valLB', required=True, help='path to dataset')
+parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
+parser.add_argument('--nchanel', type=int, default=3, help='chanel is 3:rgb or 1:gray')
 parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
 parser.add_argument('--imgH', type=int, default=32, help='the height of the input image to network')
 parser.add_argument('--imgW', type=int, default=200, help='the width of the input image to network')
@@ -34,7 +36,7 @@ parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--pretrained', default='', help="path to pretrained model (to continue training)")
 parser.add_argument('--alphabet', type=str, default='-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ')
 parser.add_argument('--expr_dir', default='expr', help='Where to store samples and models')
-parser.add_argument('--displayInterval', type=int, default=500, help='Interval to be displayed')
+parser.add_argument('--displayInterval', type=int, default=100, help='Interval to be displayed')
 parser.add_argument('--n_test_disp', type=int, default=20, help='Number of samples to display when test')
 parser.add_argument('--valInterval', type=int, default=500, help='Interval to be displayed')
 parser.add_argument('--saveInterval', type=int, default=20, help='Interval to be displayed')
@@ -60,30 +62,19 @@ cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-train_dataset = dataset.lmdbDataset(root=opt.trainRoot)
-assert train_dataset
-if not opt.random_sample:
-    sampler = dataset.randomSequentialSampler(train_dataset, opt.batchSize)
-else:
-    sampler = None
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=opt.batchSize,
-                                            shuffle=True, 
-                                            # sampler=sampler,
-                                            num_workers=int(opt.workers),
-                                            collate_fn=dataset.alignCollate(
-                                                imgH=opt.imgH, 
-                                                imgW=opt.imgW, 
-                                                keep_ratio=opt.keep_ratio)
+data_loader = DatasetLoader(
+    opt.trainIMG,
+    opt.trainLB,
+    opt.valIMG,
+    opt.valLB,
+    opt.nchanel,
+    opt.imgW,
+    opt.imgH
     )
-test_dataset = dataset.lmdbDataset(
-    root=opt.valRoot, 
-    # num_workers=int(opt.workers),
-    transform=dataset.resizeNormalize((200, 32)))
-print('kara')
-import time
-time.sleep(2)
+train_loader = data_loader.train_loader(opt.batchSize,opt.workers)
+test_dataset = data_loader.test_loader(opt.batchSize, opt.workers)
+
 nclass = len(opt.alphabet) + 1
-nc = 1
 
 converter = utils.strLabelConverter(opt.alphabet)
 criterion = torch.nn.CTCLoss() # CTCLoss()
@@ -98,13 +89,13 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
-
-crnn = crnn.CRNN(opt.imgH, nc, nclass, opt.nh)
+print('input shape:[%i, %i, %i, %i] '%(opt.imgH,opt.nchanel, nclass, opt.nh))
+crnn = crnn.CRNN(opt.imgH, opt.nchanel, nclass, opt.nh)
 crnn.apply(weights_init)
 if opt.pretrained != '':
     print('loading pretrained model from %s' % opt.pretrained)
     crnn.load_state_dict(torch.load(opt.pretrained))
-print(crnn)
+# print(crnn)
 
 image = torch.FloatTensor(opt.batchSize, 3, opt.imgH, opt.imgH)
 text = torch.IntTensor(opt.batchSize * 5)
@@ -197,16 +188,15 @@ def trainBatch(net, criterion, optimizer):
     optimizer.step()
     return cost
 
-
+print('start trainning')
 for epoch in range(opt.nepoch):
+    print(epoch)
     train_iter = iter(train_loader)
     i = 0
     while i < len(train_loader):
         for p in crnn.parameters():
             p.requires_grad = True
         crnn.train()
-        print('load data aaaaaaaaa')
-        time.sleep(2)
         cost = trainBatch(crnn, criterion, optimizer)
         loss_avg.add(cost)
         i += 1
@@ -219,12 +209,15 @@ for epoch in range(opt.nepoch):
         if i % opt.valInterval == 0:
             val(crnn, test_dataset, criterion)
 
-        # do checkpointing
-        if i % opt.saveInterval == 0:
-            torch.save(
-                crnn.state_dict(), '{0}/net_CRNN_{1}_{2}.pth'.format(opt.expr_dir, epoch, i))
+    # do checkpointing
+    if epoch % opt.saveInterval == 0:
+        torch.save(crnn.state_dict(), '{0}/net_CRNN_{1}.pth'.format(opt.expr_dir, epoch, i))
 
 
 """
-python train.py --trainRoot ./data/train/data.mdb --valRoot ./data/valid/data.mdb --cuda --ngpu 0 --nepoch 1 --batchSize 128
+python ngoc_train.py --trainIMG /home/ngoc/work/ocr/crnn.pytorch/dataset/train.txt \
+--trainLB /home/ngoc/work/ocr/crnn.pytorch/dataset/label.txt \
+--valIMG /home/ngoc/work/ocr/crnn.pytorch/valset/train.txt \
+--valLB /home/ngoc/work/ocr/crnn.pytorch/valset/valid.txt \
+--cuda --ngpu 1 --nepoch 3 --batchSize 128 --chanel 1 --saveInterval 2
 """

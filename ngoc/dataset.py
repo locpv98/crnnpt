@@ -4,8 +4,8 @@ from PIL import Image
 import torch
 
 def resizePadding(img, chanel, width, height):
-    mean=[0.485, 0.456, 0.406]
-    std=[0.229, 0.224, 0.225]
+    mean=[0.485]
+    std=[0.229]
 
     desired_w, desired_h  = width, height #(width, height)
     img_w, img_h = img.size  # old_size[0] is in (width, height) format
@@ -17,7 +17,7 @@ def resizePadding(img, chanel, width, height):
     # padding image
     if desired_w != None and desired_w > new_w:
         if chanel==3:
-            new_img = Image.new("RGB", (desired_w, desired_h), color=255)
+            new_img = Image.new("L", (desired_w, desired_h), color=255)
         else:
             new_img = Image.new("L",(desired_w, desired_h), color=255)
         new_img.paste(img, (0, 0))
@@ -73,7 +73,7 @@ class ImageDataset(Dataset):
         assert index <= len(self), 'index range error'
         # print('dang den ',index)
         if self.chanel == 3:
-            img = Image.open(self.list_img[index]).convert('RGB')
+            img = Image.open(self.list_img[index]).convert('L')
         else:
             img = Image.open(self.list_img[index]).convert('L')
         label = self.list_label[index]

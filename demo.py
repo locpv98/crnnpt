@@ -7,14 +7,14 @@ from torchvision.transforms import ToTensor
 import models.crnn as crnn
 
 
-model_path = '/home/ngoc/work/ocr/crnn.pytorch/netCRNN_100.pth'
+model_path = '/home/long/Downloads/Telegram Desktop/crnn.pytorch/train/net_CRNN_10.pth'
 # img_path = '/home/ngoc/work/ocr/crnn-license-plate-OCR/images/photo_2021-11-29_14-45-22.jpg'
-img_path = '/home/ngoc/work/ocr/crnn.pytorch/valset/11A-652.75.jpg'
+img_path = '/home/long/Downloads/Telegram Desktop/crnn.pytorch/images/41181.jpg'
 # img_path = '/home/ngoc/work/ocr/crnn.pytorch/images/56FCYikaub.jpg'
-alphabet = '-.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+alphabet = '-1234567890ABCDEFGHKLMNPSTUVXYZ'
 ncl = len(alphabet)+1 #39
 
-model = crnn.CRNN(32, 3, ncl, 256)
+model = crnn.CRNN(32, 1, ncl, 256)
 if torch.cuda.is_available():
     model = model.cuda()
 print('loading pretrained model from %s' % model_path)
@@ -24,7 +24,7 @@ model.eval()
 converter = utils.strLabelConverter(alphabet)
 
 transformer = dataset.resizeNormalize((200, 32))
-image = Image.open(img_path).convert('RGB')
+image = Image.open(img_path).convert('L')
 # image = transformer(image)
 if torch.cuda.is_available():
     image = ToTensor()(image).cuda()
